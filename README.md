@@ -1,7 +1,7 @@
 # LinguaLoop 🎓 (말문)
 
 > **영상으로 배운 표현을 실제로 "써보게" 만드는 AI 언어 학습 파트너**
-> Input → Analysis → Role Play → Feedback → Review 흐름을 [LangGraph]로 구현한 교육용 에이전트입니다.
+> Input → Analysis → Role Play → Feedback → Review 흐름을 LangGraph로 구현한 교육용 에이전트입니다.
 
 ---
 
@@ -31,20 +31,20 @@
 4. **연습 모드 분기 (Conditional Edge)** — 사용자의 선택(`practice_mode`)에 따라 **역할극 ↔ 플래시카드** 로 분기
 5. **역할극 대화 파트너 (Role Play)** — 상황별 페르소나(바리스타 등)로 대화하며 학습 표현 사용을 유도
 6. **피드백 & 복습 (Feedback / Review)** — 표현 사용 여부를 채점하고, 미사용·오류 표현을 간격 반복 스케줄(1·3·7일)로 정리
-7. **💾 메모리 (Memory)** — `SqliteSaver`로 `thread_id`별 학습 이력을 SQLite 파일에 저장 (세션이 끊겨도 유지)
+7. **💾 영속 메모리 (Memory)** — `SqliteSaver`로 `thread_id`별 학습 이력을 SQLite 파일에 저장 (세션이 끊겨도 유지)
 
 ## 🗺️ 아키텍처 (LangGraph 그래프)
 
 ```mermaid
 flowchart TD
     START([START]) --> A[extract_expressions<br/>표현 추출]
-    A --> B[enrich_expressions<br/>🔧 Tool 보강]
+    A --> B[enrich_expressions<br/>Tool 보강]
     B --> C[generate_quiz<br/>퀴즈 생성]
     C --> D[grade_quiz<br/>퀴즈 채점]
-    D -- 'practice_mode == "roleplay"' --> E[roleplay_partner<br/>역할극 대화]
-    D -- 'practice_mode == "flashcards"' --> F[build_flashcards<br/>플래시카드]
-    E -- "turn < max_turns" --> E
-    E -- "turn ≥ max_turns" --> G[give_feedback<br/>피드백]
+    D -->|practice_mode = roleplay| E[roleplay_partner<br/>역할극 대화]
+    D -->|practice_mode = flashcards| F[build_flashcards<br/>플래시카드]
+    E -->|turn 부족| E
+    E -->|turn 충족| G[give_feedback<br/>피드백]
     G --> H[build_review<br/>복습 리스트]
     H --> FIN([END])
     F --> FIN
