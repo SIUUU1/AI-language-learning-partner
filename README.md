@@ -1,84 +1,101 @@
-# LinguaLoop 🎓 (말문)
-
-> **영상으로 배운 표현을 실제로 "써보게" 만드는 AI 언어 학습 파트너**
-> Input → Analysis → Role Play → Feedback → Review 흐름을 LangGraph로 구현한 교육용 에이전트입니다.
+# 🎓 LinguaLoop (말문) — AI 언어 학습 파트너
 
 ---
 
-## 📌 소개
+## SECTION 1. 워크플로우 소개
 
-외국어 영상을 보며 표현을 정리해도, 실제로 써볼 기회가 없어 금방 잊어버립니다.
-**LinguaLoop**은 학습을 *입력 중심*에서 *출력 중심*으로 바꿉니다.
+**워크플로우 이름**
+AI-language-learning-partner (LinguaLoop / 말문)
 
-- **입력** — 사용자가 모국어·학습 언어·자막(유튜브 등)을 제공
-- **처리** — 자막에서 회화용 핵심 표현을 뽑고, 사전·웹 검색으로 보강한 뒤, 퀴즈로 각인
-- **출력** — AI 파트너와의 실전 대화에서 그 표현을 **쓰도록 유도**하고, 사용 여부를 채점해 피드백 + 복습 리스트로 연결
+**한 줄 요약**
+사용자가 모국어·학습 언어·유튜브 영상을 선택(입력) → AI가 영상을 분석해 맞춤형 학습 콘텐츠와 역할극을 생성(처리) → 영상 학습과 퀴즈로 표현을 익힌 뒤, AI 파트너와 음성으로 대화하며 표현을 연습하고 피드백·복습을 제공받는(출력) 언어 학습 워크플로우.
 
-## 🎯 해결하는 문제
+**해결하는 문제**
+외국어 영상을 보며 표현을 정리해도 실제 사용할 기회가 부족해 금방 잊어버리는 문제를 해결한다. 사용자는 모국어와 학습 언어만 선택하면, AI가 맞춤형 학습 콘텐츠 생성부터 실전 대화 연습까지 이어서 제공한다.
 
-| 기존 학습 | LinguaLoop |
+---
+
+## SECTION 2. 기술 소개
+
+**사용 기술**
+
+| 구분 | 기술 |
 |---|---|
-| 표현을 눈으로만 보고 넘어감 (입력) | 대화에서 직접 사용하도록 유도 (출력) |
-| 회화 상대를 구하기 어려움 | 상황별 AI 파트너가 즉시 대화 |
-| 무엇을 다시 봐야 할지 모름 | 미사용·오답 표현을 복습 리스트로 자동 정리 |
-| 학습 이력이 흩어짐 | SQLite에 학습 이력을 영속 저장 |
+| 오케스트레이션 | LangGraph (Supervisor 기반 멀티 에이전트) |
+| LLM | OpenAI GPT (표현 추출, 대화 생성) |
+| 음성 출력 | **gpt-4o-mini-tts** (페르소나별 목소리/말투) |
+| 음성 입력 | **gpt-4o-mini-transcribe** (whisper-1 폴백) |
+| 데이터 수집 | YouTube Data API v3(검색/메타데이터), youtube-transcript-api(자막) |
+| 저장소 | SQLite(앱 DB + LangGraph 체크포인트), ChromaDB(표현 임베딩) |
+| 백엔드 | FastAPI |
+| 프런트엔드 | Streamlit |
+| 테스트 | PyTest |
 
-## ✨ 핵심 기능
+**연동 서비스**
+YouTube Data API, OpenAI API(GPT·TTS·STT), SQLite, ChromaDB
 
-1. **표현 추출 (Analysis)** — 자막에서 회화용 핵심 표현 5~10개를 뜻·예문과 함께 추출
-2. **🔧 Tool 보강 (Enrich)** — 커스텀 사전 도구 + **웹 검색(DuckDuckGo)** 으로 정의·유의어·실제 예문 보강
-3. **퀴즈 & 채점 (Quiz)** — 추출 표현으로 빈칸 퀴즈를 만들고 사용자의 답을 채점
-4. **연습 모드 분기 (Conditional Edge)** — 사용자의 선택(`practice_mode`)에 따라 **역할극 ↔ 플래시카드** 로 분기
-5. **역할극 대화 파트너 (Role Play)** — 상황별 페르소나(바리스타 등)로 대화하며 학습 표현 사용을 유도
-6. **피드백 & 복습 (Feedback / Review)** — 표현 사용 여부를 채점하고, 미사용·오류 표현을 간격 반복 스케줄(1·3·7일)로 정리
-7. **💾 영속 메모리 (Memory)** — `SqliteSaver`로 `thread_id`별 학습 이력을 SQLite 파일에 저장 (세션이 끊겨도 유지)
+**자동화 수준**
+반자동 → 완전 자동화된 파이프라인. 사용자가 영상을 선택하면 ① 표현 분석 ② 퀴즈 생성/채점 ③ 음성 역할극 ④ 피드백/복습 스케줄링까지 4개 전문 에이전트가 자동으로 이어서 수행한다. (`run_demo.py` 로 사람 개입 없이 전 과정 자동 실행 가능)
 
-## 🗺️ 아키텍처 (LangGraph 그래프)
+---
 
-```mermaid
-flowchart TD
-    START([START]) --> A[extract_expressions<br/>표현 추출]
-    A --> B[enrich_expressions<br/>Tool 보강]
-    B --> C[generate_quiz<br/>퀴즈 생성]
-    C --> D[grade_quiz<br/>퀴즈 채점]
-    D -->|practice_mode = roleplay| E[roleplay_partner<br/>역할극 대화]
-    D -->|practice_mode = flashcards| F[build_flashcards<br/>플래시카드]
-    E -->|turn 부족| E
-    E -->|turn 충족| G[give_feedback<br/>피드백]
-    G --> H[build_review<br/>복습 리스트]
-    H --> FIN([END])
-    F --> FIN
-```
+## 🔊🎤 음성 대화 (gpt-4o-mini-tts + gpt-4o-mini-transcribe)
 
-- **Conditional Edge #1** `route_by_mode` — 사용자 입력에 따라 역할극/플래시카드로 분기
-- **Conditional Edge #2** `route_after_roleplay` — 대화 턴이 `max_turns`에 도달할 때까지 역할극 자기 순환
+- **출력**: AI 파트너 답변을 `gpt-4o-mini-tts`로 합성, 페르소나별 목소리/말투 적용. 키 없으면 브라우저 내장 음성으로 폴백.
+- **입력**: 마이크 녹음을 `gpt-4o-mini-transcribe`로 받아써 채팅 스크립트로 표시(whisper-1 폴백). 키 없으면 텍스트 입력으로 폴백.
 
-## 🧱 State 구조 (`TypedDict`)
+## 📡 API 요약
 
-| 필드 | 설명 |
-|---|---|
-| `native_language`, `target_language` | 모국어 / 학습 언어 |
-| `transcript` | 입력 자막 |
-| `key_expressions` | 추출된 핵심 표현 |
-| `enriched_expressions` | 🔧 Tool로 보강된 표현(정의·유의어·예문) |
-| `quiz`, `quiz_answers`, `quiz_score` | 퀴즈·사용자 답·점수 |
-| `practice_mode` | 사용자 선택 (분기 기준) |
-| `messages` | 역할극 대화 기록 (`add_messages` 리듀서로 누적) |
-| `turn_count`, `max_turns` | 대화 턴 / 종료 조건 |
-| `feedback`, `review_list`, `flashcards` | 산출물 |
-| `study_history` | 💾 학습 이력 (`operator.add` 리듀서로 누적, SQLite 영속) |
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/health` | 현재 모드(mock/실제), 페르소나·TTS·STT 가용 여부 |
+| POST | `/youtube/search` | 유튜브 검색 |
+| POST | `/session/analyze` | 영상 분석 → 표현 + 퀴즈 생성/저장 |
+| POST | `/quiz/grade` | 퀴즈 채점 |
+| POST | `/roleplay/turn` | 역할극 한 턴 (+음성) |
+| POST | `/tts` / `/stt` | 텍스트→음성 / 음성→텍스트 |
+| POST | `/session/feedback` | 피드백 + 복습/플래시카드 |
+| GET | `/user/{id}/history` · `/reviews` · `/stats` | 학습 이력·복습·통계 |
 
-## 🛠️ 기술 스택
+---
 
-- **오케스트레이션**: LangGraph, LangChain
-- **LLM**: OpenAI GPT (`gpt-4o-mini`)
-- **Tool**: 커스텀 사전 도구, DuckDuckGo 웹 검색(`langchain-community`)
-- **메모리**: `SqliteSaver` (SQLite)
-- **(로드맵) 입력 파이프라인**: YouTube Data API, Whisper
-
-## ⚙️ 설치
+## 🚀 실행 방법
 
 ```bash
-pip install -U langgraph langchain-core langchain-openai \
-    langgraph-checkpoint-sqlite langchain-community duckduckgo-search
+pip install -r requirements.txt
+
+# (선택) 키 설정 — 없으면 mock/sample 로 동작
+cp .env.example .env
+
+uvicorn backend.main:app --reload --port 8000   # 백엔드
+streamlit run frontend/streamlit_app.py         # UI (다른 터미널)
+python run_demo.py                              # 백엔드 없이 전체 흐름만
+pytest -q                                       # 테스트 (15건)
+```
+
+---
+
+## 📁 구조
+
+```
+lingualoop/
+├── backend/
+│   ├── config.py          # 키/모드, LLM 래퍼(mock 폴백)
+│   ├── state.py           # 공유 State + 페르소나
+│   ├── youtube_service.py # YouTube Data API + 자막
+│   ├── tools.py           # @tool: 사전/예문 검색
+│   ├── agents.py          # ★ 전문 에이전트 4개 (멀티 에이전트)
+│   ├── graph.py           # ★ Supervisor 오케스트레이션 + SQLite 체크포인트
+│   ├── vectorstore.py     # ChromaDB 표현 메모리
+│   ├── tts.py             # gpt-4o-mini-tts 음성 합성 (출력)
+│   ├── stt.py             # gpt-4o-mini-transcribe 받아쓰기 (입력)
+│   ├── db.py              # 애플리케이션 SQLite
+│   └── main.py            # FastAPI
+├── frontend/
+│   └── streamlit_app.py   # Streamlit UI
+├── tests/
+│   └── test_nodes.py      # PyTest (15)
+├── run_demo.py            # CLI 전체 실행 데모
+├── requirements.txt
+└── .env.example
 ```
