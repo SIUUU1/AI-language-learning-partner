@@ -122,6 +122,7 @@ def root():
 def health():
     return {
         "status": "ok",
+        "mode": mode_banner(),
         "tts_available": tts.available(),
         "stt_available": stt.available(),
         "email_available": auth.EMAIL_SENDING_CONFIGURED,
