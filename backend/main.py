@@ -109,6 +109,15 @@ class ResendCodeReq(BaseModel):
 
 
 # ── 엔드포인트 ──────────────────────────────────────────
+@app.get("/")
+def root():
+    return {
+        "service": "LinguaLoop API",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "mode": mode_banner(),
