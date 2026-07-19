@@ -25,12 +25,19 @@ CHROMA_DIR = str(DATA_DIR / "chroma")                       # ChromaDB 영속 �
 # 키 / 모드 플래그 (Streamlit Secrets 지원 하이브리드 로직)
 # ─────────────────────────────────────────────────────────────
 def _get_secret(key_name: str, default: str = "") -> str:
-    """Streamlit Secrets에서 먼저 찾고, 없으면 OS 환경변수(os.getenv)에서 가져옵니다."""
-    # 1. Streamlit Secrets 확인
-    if key_name in st.secrets:
-        return str(st.secrets[key_name]).strip()
-    # 2. OS 환경 변수 (.env) 확인
-    return os.getenv(key_name, default).strip()
+    # 1. 환경변수 우선 (Render, 로컬 등)
+    value = os.getenv(key_name)
+    if value:
+        return value.strip()
+
+    # 2. Streamlit Secrets (Streamlit Cloud)
+    try:
+        if key_name in st.secrets:
+            return str(st.secrets[key_name]).strip()
+    except Exception:
+        pass
+
+    return default
 
 OPENAI_API_KEY = _get_secret("OPENAI_API_KEY")
 YOUTUBE_API_KEY = _get_secret("YOUTUBE_API_KEY")
