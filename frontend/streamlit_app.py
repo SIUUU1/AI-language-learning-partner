@@ -11,7 +11,11 @@ import time
 import streamlit as st
 import streamlit.components.v1 as components
 
-API = os.getenv("LINGUALOOP_API", "http://localhost:8000")
+API = (
+    st.secrets.get("LINGUALOOP_API")
+    or os.getenv("LINGUALOOP_API")
+    or "http://localhost:8000"
+)
 
 st.set_page_config(page_title="LinguaLoop 말문", page_icon="🎓",
                    layout="centered", initial_sidebar_state="expanded")
