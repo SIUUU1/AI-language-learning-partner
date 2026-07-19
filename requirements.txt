@@ -21,6 +21,7 @@ uvicorn[standard]
 python-multipart          # /stt 오디오 업로드 처리
 pydantic>=2
 requests
+ffmpeg-python
 
 # ── UI ──
 streamlit
