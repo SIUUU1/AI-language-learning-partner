@@ -4,14 +4,16 @@ langgraph-checkpoint-sqlite
 langchain-core
 langchain-openai          # OPENAI_API_KEY 있을 때만 실제 호출
 openai                    # gpt-4o-mini-tts 음성 합성 (역할극 TTS)
-langchain-community       # DuckDuckGo 예문 검색 도구
+langchain-community       # DuckDuckGo 예문 검색 도구 (선택)
 
 # ── 데이터 수집 (YouTube) ──
 google-api-python-client  # YouTube Data API v3 (검색/메타데이터)
 youtube-transcript-api    # 자막 본문
+yt-dlp                    # Whisper 폴백용 오디오 다운로드 
 
 # ── 벡터/영속 ──
-chromadb                  # 학습 표현 의미 저장 (신규성 판정)
+chromadb                  # 학습 표현 의미 저장
+# sqlite3 은 파이썬 표준 라이브러리
 
 # ── 서비스 ──
 fastapi

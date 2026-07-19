@@ -1,9 +1,5 @@
 """
-tools.py — Tools called by the agent (@tool)
-
-Used by ContentAnalyzerAgent to enrich expressions:
-  · dictionary_lookup        — Simple definitions + synonyms
-  · example_sentence_search  — Search for real-world example sentences on the web (DuckDuckGo) (with fallback on failure)
+tools.py — 에이전트가 호출하는 도구(@tool)
 """
 from __future__ import annotations
 
@@ -11,7 +7,7 @@ from typing import Dict, List
 
 from langchain_core.tools import tool
 
-USE_WEB_SEARCH = True  # If set to `false`, the fallback example is always used.
+USE_WEB_SEARCH = True  # False 로 두면 항상 폴백 예문 사용
 
 _FALLBACK_EXAMPLES = {
     "I'll have ...": "I'll have the soup of the day.",
@@ -32,13 +28,13 @@ _KB = {
 
 @tool
 def dictionary_lookup(expression: str) -> dict:
-    """Returns a brief definition of the expression and its synonyms (up to two)."""
+    """표현의 간단한 정의와 유의어(최대 2개)를 반환한다."""
     return _KB.get(expression, {"definition": "(general expression)", "synonyms": []})
 
 
 @tool
 def example_sentence_search(expression: str) -> list:
-    """Search the web (DuckDuckGo) for actual usage examples of the expression. Fall back if the search fails."""
+    """웹(DuckDuckGo)에서 표현의 실제 사용 예문을 검색한다. 실패 시 폴백."""
     if USE_WEB_SEARCH:
         try:
             from langchain_community.tools import DuckDuckGoSearchRun

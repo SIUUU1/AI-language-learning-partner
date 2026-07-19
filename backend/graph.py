@@ -1,8 +1,8 @@
 """
-graph.py — Supervisor Orchestration (Assembly component of the multi-agent architecture)
+graph.py — Supervisor 오케스트레이션
 
-The Supervisor node checks `state.stage` to determine the next specialized agent.
-Each agent returns control to the Supervisor after execution, and the Supervisor manages the workflow.
+Supervisor 노드가 state.stage 를 보고 다음 전문 에이전트를 결정한다.
+각 에이전트는 실행 후 supervisor 로 돌아오며, supervisor 가 흐름을 통제한다.
 
    START → supervisor ─┬─→ content_analyzer ─┐
                        │←────────────────────┘
@@ -14,8 +14,6 @@ Each agent returns control to the Supervisor after execution, and the Supervisor
                        │←────────────────────┘
                        └─→ END
 
-Checkpoints are stored in SQLite (SqliteSaver) keyed by `thread_id` → persistent memory.
-While the subtitles themselves are provided via the UI/API, this graph is capable of fully automated execution from start to finish.
 """
 from __future__ import annotations
 
@@ -30,7 +28,7 @@ from .config import CHECKPOINT_DB_PATH
 from .state import LearningState
 
 
-# ── Supervisor: Determine next agent ───────────────────────────
+# ── Supervisor: 다음 에이전트 결정 ───────────────────────────
 def supervisor(state: LearningState) -> Dict:
     stage = state.get("stage", "start")
     if stage in ("start", ""):
@@ -50,18 +48,18 @@ def _route(state: LearningState) -> str:
     return state.get("route", "END")
 
 
-# ── agent node wrapper ───────────────────────────────────────
+# ── 에이전트 노드 래퍼 ───────────────────────────────────────
 def _analyzer_node(state: LearningState) -> Dict:
     return analyzer.run(state)
 
 
 def _quiz_node(state: LearningState) -> Dict:
-    # Automatic Graph Execution: Generation + Grading (using simulation answers)
+    # 그래프 자동 실행: 생성 + (시뮬레이션 답안으로) 채점
     return quiz_master.run(state)
 
 
 def _roleplay_node(state: LearningState) -> Dict:
-    # Consumes the next utterance from the learner_queue during auto-run
+    # 자동 실행 시 learner_queue 에서 다음 발화를 소비
     queue: List[str] = state.get("learner_queue", []) or []
     turn = state.get("turn_count", 0)
     utt = queue[turn] if turn < len(queue) else "Thanks, that's all!"
@@ -72,7 +70,7 @@ def _feedback_node(state: LearningState) -> Dict:
     return feedback_coach.run(state)
 
 
-# ── Graph Build ─────────────────────────────────────────────
+# ── 그래프 빌드 ─────────────────────────────────────────────
 def build_graph(checkpointer=None):
     b = StateGraph(LearningState)
     b.add_node("supervisor", supervisor)
@@ -89,7 +87,7 @@ def build_graph(checkpointer=None):
         "feedback_coach": "feedback_coach",
         "END": END,
     })
-    # All specialized agents return to the supervisor → the supervisor makes the following decisions.
+    # 모든 전문 에이전트는 supervisor 로 복귀 → supervisor 가 다음을 결정
     for agent in ("content_analyzer", "quiz_master", "roleplay_partner", "feedback_coach"):
         b.add_edge(agent, "supervisor")
 
@@ -97,7 +95,7 @@ def build_graph(checkpointer=None):
 
 
 def build_persistent_app():
-    """Production-ready graph with SQLite checkpoints."""
+    """SQLite 체크포인트가 붙은 프로덕션용 그래프."""
     conn = sqlite3.connect(CHECKPOINT_DB_PATH, check_same_thread=False)
     memory = SqliteSaver(conn)
     try:
@@ -107,5 +105,5 @@ def build_persistent_app():
     return build_graph(checkpointer=memory)
 
 
-# Since the `learner_queue` field is reserved for automatic execution, it is used by being dynamically added to the `State`.
-# (Allows runtime key injection because TypedDict is total=False)
+# learner_queue 필드는 자동 실행 전용이므로 State 에 동적으로 추가 사용
+# (TypedDict total=False 라 런타임 키 주입 허용)

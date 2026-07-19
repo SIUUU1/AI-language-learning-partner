@@ -1,11 +1,5 @@
 """
-vectorstore.py — Managing "previously learned expressions" based on semantic meaning using ChromaDB
-
-Purpose:
-  · When ContentAnalyzerAgent extracts a new expression, it checks the semantic overlap with expressions the user has already learned → Distinguishes between "new expressions" and "review expressions."
-  · Serves as the foundation for a future feature that enables "repeated practice of expressions needing reinforcement."
-
-Implements comprehensive exception handling to ensure the app does not crash, even in environments where Chroma cannot be imported.
+vectorstore.py — ChromaDB 로 "이미 배운 표현" 의미 기반 관리
 """
 from __future__ import annotations
 
@@ -18,7 +12,7 @@ _DIM = 256
 
 
 def _hash_embed(text: str) -> List[float]:
-    """Network-free deterministic embedding (bag-of-n-gram hashing)."""
+    """네트워크 불필요한 결정적 임베딩 (bag-of-ngram 해싱)."""
     vec = [0.0] * _DIM
     toks = text.lower().split()
     grams = toks + [a + " " + b for a, b in zip(toks, toks[1:])]
@@ -33,17 +27,17 @@ try:
     from chromadb import EmbeddingFunction  # type: ignore
 
     class _LocalEmbeddingFunction(EmbeddingFunction):
-        def __call__(self, input):  # noqa: A002  (chroma Interface signature)
+        def __call__(self, input):  # noqa: A002  (chroma 인터페이스 시그니처)
             return [_hash_embed(t) for t in input]
 
-        def name(self):  # Requires chroma 1.x
+        def name(self):  # chroma 1.x 가 요구
             return "lingualoop-local-hash"
 except Exception:  # pragma: no cover
     _LocalEmbeddingFunction = None  # type: ignore
 
 
 class ExpressionMemory:
-    """User-specific learning representation vector repository."""
+    """사용자별 학습 표현 벡터 저장소."""
 
     def __init__(self):
         self.enabled = False
@@ -68,7 +62,7 @@ class ExpressionMemory:
             print(f"[chroma disabled] {e}")
 
     def novelty(self, user_id: str, expression: str, threshold: float = 0.25) -> bool:
-        """Determine whether this expression is 'new' to the user (based on nearest-neighbor distance)."""
+        """이 표현이 사용자에게 '새로운' 표현인지 판정 (가장 가까운 이웃 거리 기준)."""
         if not self.enabled:
             return True
         try:
@@ -77,7 +71,7 @@ class ExpressionMemory:
             dists = (res.get("distances") or [[]])[0]
             if not dists:
                 return True
-            return dists[0] > threshold  # New expression if sufficiently far away
+            return dists[0] > threshold  # 충분히 멀면 새 표현
         except Exception:  # pragma: no cover
             return True
 
@@ -101,7 +95,7 @@ class ExpressionMemory:
             return 0
 
 
-# Process-wide singleton
+# 프로세스 전역 싱글턴
 _memory: ExpressionMemory | None = None
 
 

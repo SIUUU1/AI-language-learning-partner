@@ -1,8 +1,5 @@
 """
-state.py — LangGraph State shared by multi-agents
-
-Each specialized agent (node) reads only a portion of this State and updates only the fields it is responsible for.
-The Supervisor determines the next agent by examining the `route` field.
+state.py — LangGraph State
 """
 from __future__ import annotations
 
@@ -11,7 +8,7 @@ from typing import Annotated, Dict, List, TypedDict
 
 from langgraph.graph.message import add_messages
 
-# Roleplay Partner Persona
+# 역할극 파트너 페르소나 (문서의 "연인/친구/선생님/면접관" 요구 반영)
 PERSONAS: Dict[str, str] = {
     "friend": "a warm, casual friend chatting over coffee",
     "teacher": "a patient language teacher who gently corrects mistakes",
@@ -22,7 +19,7 @@ PERSONAS: Dict[str, str] = {
 
 
 class LearningState(TypedDict, total=False):
-    # ── Input ──
+    # ── 입력 ──
     user_id: str
     session_id: str
     native_language: str
@@ -30,15 +27,15 @@ class LearningState(TypedDict, total=False):
     video_id: str
     video_title: str
     transcript: str
-    persona: str                 # Roleplay Partner Persona Key
+    persona: str                 # 역할극 파트너 페르소나 키
     practice_mode: str           # "roleplay" | "flashcards"
 
-    # ── ContentAnalyzerAgent Output ──
+    # ── ContentAnalyzerAgent 산출물 ──
     key_expressions: List[Dict]
     enriched_expressions: List[Dict]
-    new_expression_count: int    # Number of "new expressions" compared to ChromaDB
+    new_expression_count: int    # ChromaDB 대비 "새 표현" 수
 
-    # ── QuizMasterAgent Output ──
+    # ── QuizMasterAgent 산출물 ──
     quiz: List[Dict]
     quiz_answers: List[str]
     quiz_score: int
@@ -47,15 +44,16 @@ class LearningState(TypedDict, total=False):
     messages: Annotated[list, add_messages]
     turn_count: int
     max_turns: int
-    learner_utterance: str       # Learner utterances received via the UI (injected at each turn)
-    learner_queue: List[str]     # Simulation utterance queue when graph is automatically executed
+    learner_utterance: str       # UI 에서 들어온 학습자 발화(턴마다 주입)
+    learner_queue: List[str]     # 그래프 자동 실행 시 시뮬레이션 발화 큐
 
     # ── FeedbackCoachAgent ──
     feedback: str
     review_list: List[Dict]
     flashcards: List[Dict]
 
-    # ── Shared Memory / Routing ──
+    # ── 공용 메모리 / 라우팅 ──
     study_history: Annotated[list, operator.add]
-    route: str                   # supervisor Routing decision
+    route: str                   # supervisor 라우팅 결정
     stage: str
+    llm_warning: str             # GPT 호출이 실패해 mock으로 대체됐을 때의 사유 (사용자에게 노출)
