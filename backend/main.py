@@ -120,10 +120,12 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": mode_banner(),
-            "personas": list(PERSONAS.keys()),
-            "tts_available": tts.available(),
-            "stt_available": stt.available()}
+    return {
+        "status": "ok",
+        "tts_available": tts.available(),
+        "stt_available": stt.available(),
+        "email_available": auth.EMAIL_SENDING_CONFIGURED,
+    }
 
 
 # ── 인증: 이메일 + 비밀번호 회원가입/로그인 (이메일 인증 포함) ──
