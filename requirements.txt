@@ -8,7 +8,7 @@ langchain-community       # DuckDuckGo 예문 검색 도구 (선택)
 
 # ── 데이터 수집 (YouTube) ──
 google-api-python-client  # YouTube Data API v3 (검색/메타데이터)
-youtube-transcript-api    # 자막 본문
+youtube-transcript-api>=1.0.3   # 자막 본문 (proxy_config: 클라우드 IP 차단 우회)
 yt-dlp                    # Whisper 폴백용 오디오 다운로드 
 
 # ── 벡터/영속 ──

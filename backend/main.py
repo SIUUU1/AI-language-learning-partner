@@ -126,6 +126,7 @@ def health():
         "tts_available": tts.available(),
         "stt_available": stt.available(),
         "email_available": auth.EMAIL_SENDING_CONFIGURED,
+        "email_provider": auth.ACTIVE_EMAIL_PROVIDER or "demo",
     }
 
 

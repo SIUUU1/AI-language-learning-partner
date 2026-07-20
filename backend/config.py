@@ -52,6 +52,32 @@ USE_REAL_LLM = bool(OPENAI_API_KEY)
 USE_REAL_YOUTUBE = bool(YOUTUBE_API_KEY)
 OPENAI_MODEL = _get_secret("OPENAI_MODEL", "gpt-4o-mini")
 
+# ─────────────────────────────────────────────────────────────
+# YouTube 자막 프록시 (클라우드 IP 차단 우회)
+#   YouTube 는 AWS/GCP/Azure/Render 등 클라우드 IP 대역 대부분을 차단한다.
+#   → youtube-transcript-api / yt-dlp 가 RequestBlocked/IpBlocked 로 실패.
+#   주거용(residential) 회전 프록시를 쓰면 우회된다. (Webshare 권장)
+#   - Webshare "Residential" 패키지: WEBSHARE_PROXY_USERNAME/PASSWORD 설정
+#   - 그 외 임의 HTTP/HTTPS 프록시: YT_HTTP_PROXY / YT_HTTPS_PROXY 설정
+# ─────────────────────────────────────────────────────────────
+YT_PROXY_PROVIDER = _get_secret("YT_PROXY_PROVIDER").lower()   # "webshare" | "generic" | ""
+WEBSHARE_PROXY_USERNAME = _get_secret("WEBSHARE_PROXY_USERNAME")
+WEBSHARE_PROXY_PASSWORD = _get_secret("WEBSHARE_PROXY_PASSWORD")
+YT_HTTP_PROXY = _get_secret("YT_HTTP_PROXY")
+YT_HTTPS_PROXY = _get_secret("YT_HTTPS_PROXY")
+
+# ─────────────────────────────────────────────────────────────
+# Supadata (외부 Transcript API — 클라우드 IP 차단 우회)
+#   Render 백엔드는 Supadata 에 HTTPS 로 요청만 하고, YouTube IP 차단은
+#   Supadata 인프라가 대신 뚫는다. → 프록시 직접 관리 불필요.
+#   SUPADATA_API_KEY 가 있으면 자막 확보 0순위 소스로 사용된다.
+#   mode=native : 기존 자막만(크레딧 절약, 기본값)
+#   mode=auto   : 자막 없으면 Supadata 가 Whisper AI 로 대체 생성
+#   mode=generate: 항상 AI 생성
+# ─────────────────────────────────────────────────────────────
+SUPADATA_API_KEY = _get_secret("SUPADATA_API_KEY")
+SUPADATA_MODE = _get_secret("SUPADATA_MODE", "native").lower()   # native | auto | generate
+
 _llm = None
 if USE_REAL_LLM:
     try:

@@ -168,14 +168,16 @@ if not ss["user_email"]:
         v_email = ss.get("pending_verify_email", "")
         st.caption(f"**{v_email}** 로 인증 코드를 보냈어요. 코드 6자리를 입력해 주세요. "
                    f"(유효 시간 10분)")
-        # rerun 직전에 st.info()를 호출하면 그 delta가 전송되기 전에 실행이 버려지므로
-        # (동일한 문제를 앞서 다시듣기 버튼/디버그 로그에서도 겪었다), 코드는
-        # session_state 에 저장해 두고 이 "안정적인" 다음 렌더에서 표시한다.
+        # 데모 코드는 session_state 에 저장해 두고 이 안정적인 렌더에서 표시한다
+        # (st.rerun() 직전에 st.info() 를 호출하면 delta 가 버려질 수 있음).
         if ss.get("pending_dev_code"):
             st.info(f"🧪 (데모 모드: 이메일 발송 미설정) 인증 코드: **{ss['pending_dev_code']}**")
-        code_input = st.text_input("인증 코드", max_chars=6, key="verify_code_input")
-        vc1, vc2 = st.columns(2)
-        if vc1.button("✅ 인증하기", type="primary", use_container_width=True):
+
+        with st.form("verify_form", clear_on_submit=False):
+            code_input = st.text_input("인증 코드", max_chars=6, key="verify_code_input")
+            verify_submitted = st.form_submit_button(
+                "✅ 인증하기", type="primary", use_container_width=True)
+        if verify_submitted:
             r = api_post("/auth/verify", {"email": v_email, "code": code_input.strip()})
             if r.get("ok"):
                 ss["flash_message"] = "인증 완료! 이제 로그인해 주세요."
@@ -185,11 +187,13 @@ if not ss["user_email"]:
                 st.rerun()
             else:
                 st.error(r.get("message", "인증에 실패했어요."))
-        if vc2.button("↩️ 뒤로", use_container_width=True):
+
+        bc1, bc2 = st.columns(2)
+        if bc1.button("↩️ 뒤로", use_container_width=True):
             ss["auth_stage"] = "login"
             ss["pending_dev_code"] = None
             st.rerun()
-        if st.button("코드 다시 받기", use_container_width=True):
+        if bc2.button("코드 다시 받기", use_container_width=True):
             r = api_post("/auth/resend", {"email": v_email})
             if r.get("ok"):
                 ss["pending_dev_code"] = r.get("dev_code")   # 없으면(실발송) None 으로 지워짐
@@ -206,9 +210,12 @@ if not ss["user_email"]:
 
     with tab_login:
         st.caption("이메일과 비밀번호로 로그인하세요.")
-        login_email = st.text_input("이메일", placeholder="you@example.com", key="login_email_input")
-        login_pw = st.text_input("비밀번호", type="password", key="login_pw_input")
-        if st.button("로그인", type="primary", use_container_width=True, key="login_submit_btn"):
+        with st.form("login_form", clear_on_submit=False):
+            login_email = st.text_input("이메일", placeholder="you@example.com", key="login_email_input")
+            login_pw = st.text_input("비밀번호", type="password", key="login_pw_input")
+            login_submitted = st.form_submit_button(
+                "로그인", type="primary", use_container_width=True)
+        if login_submitted:
             candidate = login_email.strip().lower()
             if not EMAIL_RE.match(candidate):
                 st.error("올바른 이메일 형식을 입력해 주세요.")
@@ -228,13 +235,20 @@ if not ss["user_email"]:
 
     with tab_signup:
         st.caption("이메일 인증 후 가입이 완료돼요. 비밀번호는 최소 8자 이상이어야 해요.")
-        signup_email = st.text_input("이메일", placeholder="you@example.com", key="signup_email_input")
-        signup_pw = st.text_input("비밀번호", type="password", key="signup_pw_input")
-        signup_pw2 = st.text_input("비밀번호 확인", type="password", key="signup_pw2_input")
-        if st.button("인증 코드 받기", type="primary", use_container_width=True, key="signup_submit_btn"):
+        # st.form 으로 묶어 제출 시 세 입력값을 한 번에 읽는다.
+        # (버튼 클릭과 마지막 입력 커밋이 엇갈려 "비밀번호가 다르다"고 잘못 뜨던 문제 해결)
+        with st.form("signup_form", clear_on_submit=False):
+            signup_email = st.text_input("이메일", placeholder="you@example.com", key="signup_email_input")
+            signup_pw = st.text_input("비밀번호", type="password", key="signup_pw_input")
+            signup_pw2 = st.text_input("비밀번호 확인", type="password", key="signup_pw2_input")
+            signup_submitted = st.form_submit_button(
+                "인증 코드 받기", type="primary", use_container_width=True)
+        if signup_submitted:
             candidate = signup_email.strip().lower()
             if not EMAIL_RE.match(candidate):
                 st.error("올바른 이메일 형식을 입력해 주세요.")
+            elif len(signup_pw) < 8:
+                st.error("비밀번호는 최소 8자 이상이어야 해요.")
             elif signup_pw != signup_pw2:
                 st.error("비밀번호가 서로 달라요.")
             else:
@@ -488,7 +502,8 @@ if ss.get("analysis") and step_reached("expressions"):
     done = not step_is_current("expressions")
     with st.container(border=True):
         st.subheader(("✅ " if done else "2️⃣ ") + "핵심 표현")
-        src_label = {"captions": "📝 공식 자막", "whisper": "🎙️ Whisper 음성 인식",
+        src_label = {"supadata": "🛰️ Supadata", "captions": "📝 공식 자막",
+                    "whisper": "🎙️ Whisper 음성 인식",
                     "sample": "🧪 샘플 데이터"}.get(a.get("transcript_source"), "")
         st.caption(f"🎬 {a.get('video_title','')}  ·  🆕 새 표현 {a.get('new_expression_count',0)}개 "
                    f"(ChromaDB 기준)  ·  {src_label}")

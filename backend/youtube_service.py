@@ -1,12 +1,15 @@
 """
 youtube_service.py
 
-학습 콘텐츠를 만들기 위한 자막 확보는 3단계 폴백으로 동작한다.
+학습 콘텐츠를 만들기 위한 자막 확보는 다단계 폴백으로 동작한다.
 
-  1순위) 공식 자막 — youtube-transcript-api
+  0순위) Supadata 외부 Transcript API — SUPADATA_API_KEY 가 있으면 최우선.
+         Render/OCI 등 클라우드 IP 차단을 Supadata 인프라가 대신 우회하므로
+         배포 환경에서 가장 안정적이다.
+  1순위) 공식 자막 — youtube-transcript-api (프록시 설정 시 IP 차단 우회)
   2순위) Whisper STT — 자막이 없는 영상이면 yt-dlp 로 오디오만 내려받아
          OpenAI Whisper(`whisper-1`)로 직접 받아쓴다.
-  3순위) 완전 실패 — 위 두 방법이 모두 실패하면 `TranscriptUnavailableError` 를
+  3순위) 완전 실패 — 위 방법이 모두 실패하면 `TranscriptUnavailableError` 를
          던진다. 호출자(main.py)는 이를 잡아 사용자에게 "다른 영상 URL을
          입력해 달라"는 안내를 보여준다.
 """
@@ -15,9 +18,17 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import time
 from typing import Dict, List, Optional
 
-from .config import OPENAI_API_KEY, USE_REAL_LLM, USE_REAL_YOUTUBE, YOUTUBE_API_KEY
+import requests
+
+from .config import (
+    OPENAI_API_KEY, USE_REAL_LLM, USE_REAL_YOUTUBE, YOUTUBE_API_KEY,
+    YT_PROXY_PROVIDER, WEBSHARE_PROXY_USERNAME, WEBSHARE_PROXY_PASSWORD,
+    YT_HTTP_PROXY, YT_HTTPS_PROXY,
+    SUPADATA_API_KEY, SUPADATA_MODE,
+)
 
 # ─────────────────────────────────────────────────────────────
 # 오프라인 샘플 (키가 없을 때만 사용 — 데모 모드)
@@ -70,6 +81,51 @@ def _client():
     """YouTube Data API v3 클라이언트."""
     from googleapiclient.discovery import build
     return build("youtube", "v3", developerKey=YOUTUBE_API_KEY, cache_discovery=False)
+
+
+# ─────────────────────────────────────────────────────────────
+# 프록시 (클라우드 IP 차단 우회)
+# ─────────────────────────────────────────────────────────────
+def _resolve_proxy_provider() -> str:
+    """명시적으로 지정 안 했으면 설정된 값으로 자동 판별."""
+    if YT_PROXY_PROVIDER in ("webshare", "generic"):
+        return YT_PROXY_PROVIDER
+    if WEBSHARE_PROXY_USERNAME and WEBSHARE_PROXY_PASSWORD:
+        return "webshare"
+    if YT_HTTP_PROXY or YT_HTTPS_PROXY:
+        return "generic"
+    return ""
+
+
+def _build_proxy_config():
+    """youtube-transcript-api(1.x) 용 proxy_config 객체. 미설정이면 None."""
+    provider = _resolve_proxy_provider()
+    try:
+        if provider == "webshare":
+            from youtube_transcript_api.proxies import WebshareProxyConfig
+            return WebshareProxyConfig(
+                proxy_username=WEBSHARE_PROXY_USERNAME,
+                proxy_password=WEBSHARE_PROXY_PASSWORD,
+            )
+        if provider == "generic":
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            return GenericProxyConfig(
+                http_url=YT_HTTP_PROXY or YT_HTTPS_PROXY,
+                https_url=YT_HTTPS_PROXY or YT_HTTP_PROXY,
+            )
+    except Exception as e:  # pragma: no cover
+        print(f"[youtube proxy 설정 실패 → 프록시 없이 진행] {e}")
+    return None
+
+
+def _proxies_dict() -> Optional[Dict[str, str]]:
+    """구버전 API / yt-dlp 용 단순 프록시 URL dict. 미설정이면 None.
+    (Webshare 회전 프록시는 URL 형태를 직접 주지 않으므로 generic 설정에만 적용된다.)"""
+    http_url = YT_HTTP_PROXY or YT_HTTPS_PROXY
+    https_url = YT_HTTPS_PROXY or YT_HTTP_PROXY
+    if http_url or https_url:
+        return {"http": http_url, "https": https_url}
+    return None
 
 
 def extract_video_id(url_or_id: str) -> str:
@@ -141,18 +197,101 @@ def video_metadata(video_id: str) -> Dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# 3-0) 0순위: Supadata 외부 Transcript API (클라우드 IP 차단 우회)
+# ─────────────────────────────────────────────────────────────
+_SUPADATA_BASE = "https://api.supadata.ai/v1"
+
+
+def _supadata_extract_text(data: Optional[dict]) -> Optional[str]:
+    """Supadata 응답에서 평문 자막을 뽑는다. content 는 (text=true)면 문자열,
+    아니면 [{text, offset, duration}] 배열. 비동기 완료 응답의 중첩도 대비."""
+    if not isinstance(data, dict):
+        return None
+    content = data.get("content")
+    if content is None and isinstance(data.get("transcript"), dict):
+        content = data["transcript"].get("content")
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        text = " ".join(seg.get("text", "") for seg in content if isinstance(seg, dict))
+    else:
+        return None
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+
+def _supadata_poll(job_id: str, headers: Dict[str, str],
+                   max_attempts: int = 10, interval: float = 3.0) -> Optional[str]:
+    """큰 영상/AI 생성은 202 + jobId 로 비동기 처리 → 완료까지 폴링.
+    (Supadata 무료 한도는 10초당 5요청이므로 간격을 둔다.)"""
+    url = f"{_SUPADATA_BASE}/transcript/{job_id}"
+    for _ in range(max_attempts):
+        time.sleep(interval)
+        try:
+            r = requests.get(url, headers=headers, timeout=30)
+            if r.status_code >= 400:
+                print(f"[Supadata poll] {r.status_code}: {r.text[:200]}")
+                return None
+            data = r.json() or {}
+            status = data.get("status")
+            if status == "completed":
+                return _supadata_extract_text(data)
+            if status == "failed":
+                print(f"[Supadata poll] 작업 실패: {data.get('error')}")
+                return None
+            # queued/active → 계속 폴링
+        except Exception as e:  # pragma: no cover
+            print(f"[Supadata poll 실패] {e}")
+            return None
+    print("[Supadata poll] 시간 초과")
+    return None
+
+
+def _fetch_via_supadata(video_id: str, target_language: str) -> Optional[str]:
+    """Supadata 로 자막을 가져온다. 성공 시 평문 문자열, 실패 시 None."""
+    if not SUPADATA_API_KEY:
+        return None
+    headers = {"x-api-key": SUPADATA_API_KEY}
+    params = {
+        "url": f"https://www.youtube.com/watch?v={video_id}",
+        "text": "true",
+        "lang": _LANG_MAP.get(target_language, "en"),
+        "mode": SUPADATA_MODE or "native",
+    }
+    try:
+        r = requests.get(f"{_SUPADATA_BASE}/transcript",
+                         headers=headers, params=params, timeout=30)
+        if r.status_code == 202:                       # 비동기 작업
+            job_id = (r.json() or {}).get("jobId")
+            return _supadata_poll(job_id, headers) if job_id else None
+        if r.status_code in (403, 404):                # 비공개/없음/제한
+            print(f"[Supadata] 접근 불가({r.status_code}): {video_id}")
+            return None
+        if r.status_code >= 400:
+            print(f"[Supadata] {r.status_code}: {r.text[:200]}")
+            return None
+        return _supadata_extract_text(r.json())
+    except Exception as e:  # pragma: no cover
+        print(f"[Supadata 실패] {video_id}: {e}")
+        return None
+
+
+# ─────────────────────────────────────────────────────────────
 # 3-a) 1순위: 공식 자막 — youtube-transcript-api
 # ─────────────────────────────────────────────────────────────
 def _fetch_official_captions(video_id: str, target_language: str) -> Optional[str]:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
         pref = _LANG_MAP.get(target_language, "en")
-        api = YouTubeTranscriptApi()
+        proxy_config = _build_proxy_config()   # 클라우드 IP 차단 우회 (미설정이면 None)
+        api = (YouTubeTranscriptApi(proxy_config=proxy_config)
+               if proxy_config is not None else YouTubeTranscriptApi())
         try:  # 신버전 API
             fetched = api.fetch(video_id, languages=[pref, "en"])
             snippets = fetched.to_raw_data() if hasattr(fetched, "to_raw_data") else fetched
         except AttributeError:  # pragma: no cover  (구버전 API 폴백)
-            snippets = YouTubeTranscriptApi.get_transcript(video_id, languages=[pref, "en"])
+            snippets = YouTubeTranscriptApi.get_transcript(
+                video_id, languages=[pref, "en"], proxies=_proxies_dict())
         text = " ".join(s["text"].replace("\n", " ") for s in snippets)
         text = re.sub(r"\s+", " ", text).strip()
         return text or None
@@ -189,6 +328,9 @@ def _transcribe_with_whisper(video_id: str) -> Optional[str]:
             "no_warnings": True,
             "noplaylist": True,
         }
+        _proxies = _proxies_dict()
+        if _proxies:   # 클라우드 IP 차단 우회 (generic 프록시에만 적용)
+            ydl_opts["proxy"] = _proxies.get("https") or _proxies.get("http")
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
@@ -228,10 +370,17 @@ def fetch_transcript(video_id: str, target_language: str = "English") -> Dict:
     반환: {"text": str, "source": "captions" | "whisper" | "sample"}
     실패 시: TranscriptUnavailableError — 호출자가 사용자에게 다른 URL을 안내해야 한다.
     """
-    if not USE_REAL_YOUTUBE or video_id in _SAMPLE_IDS:
+    # 샘플 id 이거나, 실제 자막 소스(YouTube 키 또는 Supadata)가 하나도 없으면 데모 샘플
+    has_real_source = USE_REAL_YOUTUBE or bool(SUPADATA_API_KEY)
+    if not has_real_source or video_id in _SAMPLE_IDS:
         return {"text": SAMPLE_TRANSCRIPT, "source": "sample"}
 
-    # 1순위: 공식 자막
+    # 0순위: Supadata 외부 API (클라우드 IP 차단 우회 — Render 등 배포 환경 권장)
+    text = _fetch_via_supadata(video_id, target_language)
+    if text:
+        return {"text": text, "source": "supadata"}
+
+    # 1순위: 공식 자막 (youtube-transcript-api; 프록시 설정 시 우회)
     text = _fetch_official_captions(video_id, target_language)
     if text:
         return {"text": text, "source": "captions"}
