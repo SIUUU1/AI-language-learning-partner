@@ -151,117 +151,50 @@ def _reset_session_state():
 
 
 # ─────────────────────────────────────────────────────────
-# 이메일 로그인 게이트 — 로그인 전에는 이 아래로 아무것도 렌더링하지 않는다
+# 로그인 게이트 — Google OAuth (Streamlit 네이티브 OIDC, 1.42+)
+#   .streamlit/secrets.toml 의 [auth]/[auth.google] 를 설정하면 활성화된다.
+#   미설정 시(로컬 개발 등)에는 데모용 이메일 입력으로 폴백한다.
+#   로그인 전에는 이 아래로 아무것도 렌더링하지 않는다.
 # ─────────────────────────────────────────────────────────
 ss.setdefault("user_email", None)
 ss.setdefault("searching", False)
-ss.setdefault("auth_stage", "login")          # "login" | "signup" | "verify"
-ss.setdefault("pending_verify_email", None)
-ss.setdefault("pending_dev_code", None)   # SMTP 미설정 시 데모용 인증 코드 (실발송 시엔 None)
 
-if not ss["user_email"]:
-    st.title("🎓 LinguaLoop 말문")
 
-    # ── 이메일 인증 코드 입력 화면 (회원가입 직후, 또는 미인증 상태로 로그인 시도 시) ──
-    if ss["auth_stage"] == "verify":
-        st.subheader("📧 이메일 인증")
-        v_email = ss.get("pending_verify_email", "")
-        st.caption(f"**{v_email}** 로 인증 코드를 보냈어요. 코드 6자리를 입력해 주세요. "
-                   f"(유효 시간 10분)")
-        # 데모 코드는 session_state 에 저장해 두고 이 안정적인 렌더에서 표시한다
-        # (st.rerun() 직전에 st.info() 를 호출하면 delta 가 버려질 수 있음).
-        if ss.get("pending_dev_code"):
-            st.info(f"🧪 (데모 모드: 이메일 발송 미설정) 인증 코드: **{ss['pending_dev_code']}**")
+def _auth_configured() -> bool:
+    """secrets.toml 에 [auth] 섹션이 있으면 Google OAuth 사용 가능."""
+    try:
+        return "auth" in st.secrets
+    except Exception:
+        return False
 
-        with st.form("verify_form", clear_on_submit=False):
-            code_input = st.text_input("인증 코드", max_chars=6, key="verify_code_input")
-            verify_submitted = st.form_submit_button(
-                "✅ 인증하기", type="primary", use_container_width=True)
-        if verify_submitted:
-            r = api_post("/auth/verify", {"email": v_email, "code": code_input.strip()})
-            if r.get("ok"):
-                ss["flash_message"] = "인증 완료! 이제 로그인해 주세요."
-                ss["auth_stage"] = "login"
-                ss["pending_verify_email"] = None
-                ss["pending_dev_code"] = None
-                st.rerun()
-            else:
-                st.error(r.get("message", "인증에 실패했어요."))
 
-        bc1, bc2 = st.columns(2)
-        if bc1.button("↩️ 뒤로", use_container_width=True):
-            ss["auth_stage"] = "login"
-            ss["pending_dev_code"] = None
-            st.rerun()
-        if bc2.button("코드 다시 받기", use_container_width=True):
-            r = api_post("/auth/resend", {"email": v_email})
-            if r.get("ok"):
-                ss["pending_dev_code"] = r.get("dev_code")   # 없으면(실발송) None 으로 지워짐
-                st.rerun()
-            else:
-                st.error(r.get("message", "재발송에 실패했어요."))
+AUTH_ENABLED = _auth_configured()
+
+if AUTH_ENABLED:
+    # ── 실제 Google 로그인 (비밀번호·이메일 인증 불필요) ──
+    if not st.user.is_logged_in:
+        st.title("🎓 LinguaLoop 말문")
+        st.caption("Google 계정으로 로그인하세요.")
+        if st.button("🔐 Google로 로그인", type="primary", use_container_width=True):
+            st.login("google")
         st.stop()
-
-    # ── 로그인 / 회원가입 탭 ──
-    if ss.get("flash_message"):
-        st.success(ss.pop("flash_message"))
-
-    tab_login, tab_signup = st.tabs(["로그인", "회원가입"])
-
-    with tab_login:
-        st.caption("이메일과 비밀번호로 로그인하세요.")
-        with st.form("login_form", clear_on_submit=False):
-            login_email = st.text_input("이메일", placeholder="you@example.com", key="login_email_input")
-            login_pw = st.text_input("비밀번호", type="password", key="login_pw_input")
-            login_submitted = st.form_submit_button(
-                "로그인", type="primary", use_container_width=True)
-        if login_submitted:
-            candidate = login_email.strip().lower()
-            if not EMAIL_RE.match(candidate):
-                st.error("올바른 이메일 형식을 입력해 주세요.")
-            elif not login_pw:
-                st.error("비밀번호를 입력해 주세요.")
-            else:
-                r = api_post("/auth/login", {"email": candidate, "password": login_pw})
-                if r.get("ok"):
-                    ss["user_email"] = candidate
-                    st.rerun()
-                elif r.get("needs_verification"):
-                    ss["auth_stage"] = "verify"
-                    ss["pending_verify_email"] = candidate
+    ss["user_email"] = st.user.email
+else:
+    # ── 폴백: 데모 이메일 입력 (OAuth 미설정 환경, 예: 로컬 개발) ──
+    if not ss["user_email"]:
+        st.title("🎓 LinguaLoop 말문")
+        st.info("데모 모드: Google 로그인이 아직 설정되지 않았어요. "
+                "이메일만 입력하면 바로 시작합니다.")
+        with st.form("demo_login_form", clear_on_submit=False):
+            demo_email = st.text_input("이메일", placeholder="you@example.com")
+            if st.form_submit_button("시작하기", type="primary", use_container_width=True):
+                cand = demo_email.strip().lower()
+                if EMAIL_RE.match(cand):
+                    ss["user_email"] = cand
                     st.rerun()
                 else:
-                    st.error(r.get("message", "로그인에 실패했어요."))
-
-    with tab_signup:
-        st.caption("이메일 인증 후 가입이 완료돼요. 비밀번호는 최소 8자 이상이어야 해요.")
-        # st.form 으로 묶어 제출 시 세 입력값을 한 번에 읽는다.
-        # (버튼 클릭과 마지막 입력 커밋이 엇갈려 "비밀번호가 다르다"고 잘못 뜨던 문제 해결)
-        with st.form("signup_form", clear_on_submit=False):
-            signup_email = st.text_input("이메일", placeholder="you@example.com", key="signup_email_input")
-            signup_pw = st.text_input("비밀번호", type="password", key="signup_pw_input")
-            signup_pw2 = st.text_input("비밀번호 확인", type="password", key="signup_pw2_input")
-            signup_submitted = st.form_submit_button(
-                "인증 코드 받기", type="primary", use_container_width=True)
-        if signup_submitted:
-            candidate = signup_email.strip().lower()
-            if not EMAIL_RE.match(candidate):
-                st.error("올바른 이메일 형식을 입력해 주세요.")
-            elif len(signup_pw) < 8:
-                st.error("비밀번호는 최소 8자 이상이어야 해요.")
-            elif signup_pw != signup_pw2:
-                st.error("비밀번호가 서로 달라요.")
-            else:
-                r = api_post("/auth/signup", {"email": candidate, "password": signup_pw})
-                if r.get("ok"):
-                    ss["auth_stage"] = "verify"
-                    ss["pending_verify_email"] = candidate
-                    ss["pending_dev_code"] = r.get("dev_code")   # 실발송이면 None
-                    st.rerun()
-                else:
-                    st.error(r.get("message", "회원가입에 실패했어요."))
-
-    st.stop()
+                    st.error("올바른 이메일 형식을 입력해 주세요.")
+        st.stop()
 
 
 # ─────────────────────────────────────────────────────────
@@ -310,7 +243,10 @@ with st.sidebar:
     st.caption(f"👤 {ss['user_email']}")
     if st.button("🚪 로그아웃", use_container_width=True):
         ss.clear()
-        st.rerun()
+        if AUTH_ENABLED:
+            st.logout()        # 신원 쿠키 정리 후 리다이렉트
+        else:
+            st.rerun()
 
     health = api_get("/health")
     tts_available = False

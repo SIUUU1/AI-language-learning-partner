@@ -24,7 +24,8 @@ requests
 ffmpeg-python
 
 # ── UI ──
-streamlit
+streamlit>=1.42           # 네이티브 OIDC 로그인 (st.login/st.user)
+Authlib>=1.3.2            # Streamlit 네이티브 인증에 필요
 
 # ── 테스트 ──
 pytest
