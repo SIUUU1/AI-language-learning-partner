@@ -203,7 +203,7 @@ else:
 # 채워지며, 이 함수들은 실제 호출 시점(사이드바 렌더 이후)에만 실행되므로 문제없다.
 # ─────────────────────────────────────────────────────────
 def _start_session(url_or_id: str):
-    with st.spinner("영상 분석 중... (자막 → 안되면 Whisper 음성 인식 시도)"):
+    with st.spinner("영상 분석 중..."):
         a = api_post("/session/analyze", {
             "user_id": user_id, "url_or_id": url_or_id,
             "native_language": native, "target_language": target, "persona": persona,
