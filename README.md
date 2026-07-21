@@ -103,6 +103,9 @@ cp .streamlit/secrets.toml.example .streamlit/secrets.toml
 ### 4. 실행
 
 ```bash
+# 키 반영
+export $(grep -v '^#' .env | xargs)
+
 # 백엔드 (FastAPI)
 uvicorn backend.main:app --reload --port 8000
 
