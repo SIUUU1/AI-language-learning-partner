@@ -91,8 +91,13 @@ pip install -r requirements.txt
 ### 3. 환경 변수 설정 (선택)
 
 ```bash
+# 일반 환경 변수 (OpenAI, YouTube 등)
 cp .env.example .env
 # .env 파일을 열어 필요한 키를 채워 넣으세요. 비워두면 mock/샘플 모드로 동작합니다.
+
+# Streamlit 시크릿 (Google OAuth 등)
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+# secrets.toml 파일을 열어 Google OAuth 클라이언트 ID/Secret 등 필요한 키를 채워 넣으세요.
 ```
 
 ### 4. 실행
@@ -123,6 +128,8 @@ pytest -q
 | `OPENAI_MODEL` | 사용할 모델 (기본 `gpt-4o-mini`) | — |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 키 | 샘플 영상/자막 사용 |
 | `LINGUALOOP_API` | Streamlit이 호출할 백엔드 주소 (기본 `http://localhost:8000`) | 기본값 사용 |
+| `GOOGLE_CLIENT_ID` | Google OAuth 2.0 클라이언트 ID | Google 로그인 비활성화
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 2.0 클라이언트 Secret | Google 로그인 비활성화
 
 > 💡 YouTube API 키는 [Google Cloud Console](https://console.cloud.google.com) → *YouTube Data API v3 사용 설정* → *API 키 발급*에서 받을 수 있습니다.
 
